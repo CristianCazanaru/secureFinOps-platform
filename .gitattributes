@@ -12,3 +12,18 @@ Dockerfile  text eol=lf
 .env.example    text eol=lf
 *.sh            text eol=lf
 scripts/*       text eol=lf
+
+# --- Language classification (linguist) ---
+# Exclude utility scripts from language stats
+*.ps1       linguist-vendored
+*.sh        linguist-vendored
+*.cmd       linguist-vendored
+mvnw        linguist-vendored
+mvnw.cmd    linguist-vendored
+scripts/*   linguist-vendored
+
+# Ensure the real languages are counted
+*.java      linguist-detectable
+*.tf        linguist-detectable
+Dockerfile  linguist-detectable
+Jenkinsfile linguist-language=Groovy
