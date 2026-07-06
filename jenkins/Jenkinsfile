@@ -6,9 +6,10 @@ pipeline {
     }
 
     environment {
-        APP_NAME  = 'transaction-service'
+        APP_NAME   = 'transaction-service'
         IMAGE_NAME = "securefinops/${APP_NAME}"
         IMAGE_TAG  = "${BUILD_NUMBER}"
+        SECURITY_FAILED = 'false'
     }
 
     stages {
@@ -23,22 +24,27 @@ pipeline {
         stage('IaC Scan - Checkov') {
             steps {
                 script {
-                    def status = sh(
-                        script: """
-                            docker run --rm \
-                                --volumes-from securefinops-jenkins-local \
-                                bridgecrew/checkov:latest \
-                                --directory ${WORKSPACE}/infra \
-                                --output json \
-                                --soft-fail \
-                                --quiet \
-                                > ${WORKSPACE}/checkov-results.json 2>/dev/null || true
-
-                            echo "File size: \$(wc -c < ${WORKSPACE}/checkov-results.json 2>/dev/null || echo 0) bytes"
-                        """,
-                        returnStatus: true
-                    )
-                    env.CHECKOV_STATUS = (status == 0) ? '<span style="color:green;font-weight:bold;">PASSED</span>' : '<span style="color:red;font-weight:bold;">FAILED</span>'
+                    sh """
+                        docker run --rm \
+                            --volumes-from securefinops-jenkins-local \
+                            bridgecrew/checkov:latest \
+                            --directory ${WORKSPACE}/infra \
+                            --output json \
+                            --soft-fail \
+                            --quiet \
+                            > ${WORKSPACE}/checkov-results.json 2>/dev/null || true
+                    """
+                    def failed = sh(
+                        script: "grep -o '\"result\": *\"FAILED\"' ${WORKSPACE}/checkov-results.json | wc -l",
+                        returnStdout: true
+                    ).trim().toInteger()
+                    echo "Checkov failed checks: ${failed}"
+                    if (failed > 0) {
+                        env.CHECKOV_STATUS = '<span style="color:red;font-weight:bold;">FAILED</span>'
+                        env.SECURITY_FAILED = 'true'
+                    } else {
+                        env.CHECKOV_STATUS = '<span style="color:green;font-weight:bold;">PASSED</span>'
+                    }
                 }
             }
             post {
@@ -52,24 +58,30 @@ pipeline {
         stage('Secret Scan - Gitleaks') {
             steps {
                 script {
-                    def status = sh(
-                        script: '''
-                            docker run --rm \
-                                --volumes-from securefinops-jenkins-local \
-                                zricethezav/gitleaks:latest \
-                                detect \
-                                    --source ${WORKSPACE} \
-                                    --no-git \
-                                    --report-format json \
-                                    --report-path ${WORKSPACE}/gitleaks-results.json \
-                                    --exit-code 0 \
-                                    --verbose
-                        ''',
-                        returnStatus: true
-                    )
-                    env.GITLEAKS_STATUS = (status == 0) ? '<span style="color:green;font-weight:bold;">PASSED</span>' : '<span style="color:red;font-weight:bold;">FAILED</span>'
+                    sh '''
+                        docker run --rm \
+                            --volumes-from securefinops-jenkins-local \
+                            zricethezav/gitleaks:latest \
+                            detect \
+                                --source ${WORKSPACE} \
+                                --no-git \
+                                --report-format json \
+                                --report-path ${WORKSPACE}/gitleaks-results.json \
+                                --exit-code 0 \
+                                --verbose
+                    '''
+                    def leaks = sh(
+                        script: "grep -c '\"RuleID\"' ${WORKSPACE}/gitleaks-results.json || echo 0",
+                        returnStdout: true
+                    ).trim().toInteger()
+                    echo "Gitleaks secrets found: ${leaks}"
+                    if (leaks > 0) {
+                        env.GITLEAKS_STATUS = '<span style="color:red;font-weight:bold;">FAILED</span>'
+                        env.SECURITY_FAILED = 'true'
+                    } else {
+                        env.GITLEAKS_STATUS = '<span style="color:green;font-weight:bold;">PASSED</span>'
+                    }
                 }
-                
             }
             post {
                 always {
@@ -153,25 +165,30 @@ pipeline {
 
         stage('SAST - Semgrep') {
             steps {
-                script{
-                    def status = sh(
-                        script: """
-                            docker run --rm \
-                                --volumes-from securefinops-jenkins-local \
-                                semgrep/semgrep:latest \
-                                semgrep scan \
-                                    --config p/java \
-                                    --config p/owasp-top-ten \
-                                    --config p/secrets \
-                                    --json \
-                                    --output ${WORKSPACE}/semgrep-results.json \
-                                    ${WORKSPACE}
-                        """,
-                        returnStatus: true
-                    )
-                    env.SEMGREP_STATUS = (status == 0) 
-                        ? '<span style="color:green;font-weight:bold;">PASSED</span>' 
-                        : '<span style="color:red;font-weight:bold;">FAILED</span>'
+                script {
+                    sh """
+                        docker run --rm \
+                            --volumes-from securefinops-jenkins-local \
+                            semgrep/semgrep:latest \
+                            semgrep scan \
+                                --config p/java \
+                                --config p/owasp-top-ten \
+                                --config p/secrets \
+                                --json \
+                                --output ${WORKSPACE}/semgrep-results.json \
+                                ${WORKSPACE}
+                    """
+                    def findings = sh(
+                        script: "grep -o '\"check_id\"' ${WORKSPACE}/semgrep-results.json | wc -l",
+                        returnStdout: true
+                    ).trim().toInteger()
+                    echo "Semgrep findings: ${findings}"
+                    if (findings > 0) {
+                        env.SEMGREP_STATUS = '<span style="color:red;font-weight:bold;">FAILED</span>'
+                        env.SECURITY_FAILED = 'true'
+                    } else {
+                        env.SEMGREP_STATUS = '<span style="color:green;font-weight:bold;">PASSED</span>'
+                    }
                 }
             }
             post {
@@ -185,24 +202,29 @@ pipeline {
         stage('SCA - Trivy Filesystem') {
             steps {
                 script {
-                    def status = sh(
-                        script: """
-                            docker run --rm \
-                                --volumes-from securefinops-jenkins-local \
-                                -v trivy-cache:/root/.cache/trivy \
-                                -e TRIVY_OFFLINE_SCAN=true \
-                                aquasec/trivy:latest \
-                                fs \
-                                    --format json \
-                                    --output ${WORKSPACE}/trivy-fs-results.json \
-                                    --severity HIGH,CRITICAL \
-                                    ${WORKSPACE}
-                        """,
-                        returnStatus: true
-                    )
-                    env.TRIVY_FS_STATUS = (status == 0) 
-                        ? '<span style="color:green;font-weight:bold;">PASSED</span>' 
-                        : '<span style="color:red;font-weight:bold;">FAILED</span>'
+                    sh """
+                        docker run --rm \
+                            --volumes-from securefinops-jenkins-local \
+                            -v trivy-cache:/root/.cache/trivy \
+                            -e TRIVY_OFFLINE_SCAN=true \
+                            aquasec/trivy:latest \
+                            fs \
+                                --format json \
+                                --output ${WORKSPACE}/trivy-fs-results.json \
+                                --severity HIGH,CRITICAL \
+                                ${WORKSPACE}
+                    """
+                    def critical = sh(
+                        script: "grep -o '\"Severity\": \"CRITICAL\"' ${WORKSPACE}/trivy-fs-results.json | wc -l",
+                        returnStdout: true
+                    ).trim().toInteger()
+                    echo "Trivy FS CRITICAL: ${critical}"
+                    if (critical > 0) {
+                        env.TRIVY_FS_STATUS = '<span style="color:red;font-weight:bold;">FAILED</span>'
+                        env.SECURITY_FAILED = 'true'
+                    } else {
+                        env.TRIVY_FS_STATUS = '<span style="color:green;font-weight:bold;">PASSED</span>'
+                    }
                 }
             }
             post {
@@ -212,6 +234,7 @@ pipeline {
                 }
             }
         }
+
         stage('Build Docker Image') {
             steps {
                 sh """
@@ -226,30 +249,47 @@ pipeline {
         stage('Image Scan - Trivy') {
             steps {
                 script {
-                    def status = sh(
-                        script: """
-                            docker run --rm \
-                                -v /var/run/docker.sock:/var/run/docker.sock \
-                                -v trivy-cache:/root/.cache/trivy \
-                                aquasec/trivy:latest \
-                                image \
-                                    --format json \
-                                    --severity HIGH,CRITICAL \
-                                    --exit-code 0 \
-                                    --quiet \
-                                    ${IMAGE_NAME}:${IMAGE_TAG} > ${WORKSPACE}/trivy-image-results.json 2>/dev/null
-                        """,
-                        returnStatus: true
-                    )
-                    env.TRIVY_IMAGE_STATUS = (status == 0) 
-                        ? '<span style="color:green;font-weight:bold;">PASSED</span>' 
-                        : '<span style="color:red;font-weight:bold;">FAILED</span>'
+                    sh """
+                        docker run --rm \
+                            -v /var/run/docker.sock:/var/run/docker.sock \
+                            -v trivy-cache:/root/.cache/trivy \
+                            aquasec/trivy:latest \
+                            image \
+                                --format json \
+                                --severity HIGH,CRITICAL \
+                                --exit-code 0 \
+                                --quiet \
+                                ${IMAGE_NAME}:${IMAGE_TAG} > ${WORKSPACE}/trivy-image-results.json 2>/dev/null
+                    """
+                    def critical = sh(
+                        script: "grep -o '\"Severity\": \"CRITICAL\"' ${WORKSPACE}/trivy-image-results.json | wc -l",
+                        returnStdout: true
+                    ).trim().toInteger()
+                    echo "Trivy Image CRITICAL: ${critical}"
+                    if (critical > 0) {
+                        env.TRIVY_IMAGE_STATUS = '<span style="color:red;font-weight:bold;">FAILED</span>'
+                        env.SECURITY_FAILED = 'true'
+                    } else {
+                        env.TRIVY_IMAGE_STATUS = '<span style="color:green;font-weight:bold;">PASSED</span>'
+                    }
                 }
             }
             post {
                 always {
                     archiveArtifacts artifacts: 'trivy-image-results.json',
                                     allowEmptyArchive: true
+                }
+            }
+        }
+
+        stage('Security Gate') {
+            steps {
+                script {
+                    if (env.SECURITY_FAILED == 'true') {
+                        error("Security gate failed — findings detected. Check the email report and artifacts.")
+                    } else {
+                        echo "Security gate passed — no findings above threshold."
+                    }
                 }
             }
         }
