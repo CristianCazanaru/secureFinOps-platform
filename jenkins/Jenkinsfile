@@ -71,7 +71,7 @@ pipeline {
                                 --verbose
                     '''
                     def leaks = sh(
-                        script: "grep -c '\"RuleID\"' ${WORKSPACE}/gitleaks-results.json || echo 0",
+                        script: "grep -o '\"RuleID\"' ${WORKSPACE}/gitleaks-results.json | wc -l",
                         returnStdout: true
                     ).trim().toInteger()
                     echo "Gitleaks secrets found: ${leaks}"
