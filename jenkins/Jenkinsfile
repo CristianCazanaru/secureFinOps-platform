@@ -9,7 +9,6 @@ pipeline {
         APP_NAME   = 'transaction-service'
         IMAGE_NAME = "securefinops/${APP_NAME}"
         IMAGE_TAG  = "${BUILD_NUMBER}"
-        SECURITY_FAILED = 'false'
     }
 
     stages {
@@ -359,7 +358,7 @@ pipeline {
                     body: """
                         <h2>Pipeline ${currentBuild.result} - Build: #${BUILD_NUMBER}</h2>
                         <p>Branch:<b> ${GIT_BRANCH}</b> - Commit:<b> ${GIT_COMMIT}</b></p>
-                        <h3>Details:</h3>
+                        <h3>Security Scan Results:</h3>
                         <table border="1" cellpadding="5" cellspacing="0">
                             <tr><th>Stage</th><th>Status</th></tr>
                             <tr><td>Secret Scan - Gitleaks</td><td>${env.GITLEAKS_STATUS ?: 'N/A'}</td></tr>
@@ -373,7 +372,7 @@ pipeline {
                     """,
                     mimeType: 'text/html',
                     to: "${NOTIFICATION_EMAIL}",
-                    attachmentsPattern: 'semgrep-results.json,trivy-fs-results.json,trivy-image-results.json'
+                    attachmentsPattern: 'gitleaks-results.json,checkov-results.json,semgrep-results.json,trivy-fs-results.json,trivy-image-results.json'
                 )
             }
             cleanWs(
