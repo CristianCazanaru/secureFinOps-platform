@@ -182,6 +182,12 @@ pipeline {
                         returnStdout: true
                     ).trim().toInteger()
                     echo "Semgrep findings: ${findings}"
+                    sh """
+                        echo "--- SEMGREP SEVERITY report ---"
+                        jq -r '.results[] | .extra.severity' ${WORKSPACE}/semgrep-results.json | sort | uniq -c
+                        echo "--- Total findings: ---"
+                        jq '.results | length' ${WORKSPACE}/semgrep-results.json
+                    """
                     if (findings > 0) {
                         env.SEMGREP_STATUS = '<span style="color:red;font-weight:bold;">FAILED</span>'
                         env.SECURITY_FAILED = 'true'
