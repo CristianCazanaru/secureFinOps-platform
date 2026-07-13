@@ -12,5 +12,3 @@ jq '.results | length' semgrep-results.json
 # Findings by severity
 jq -r '.results[] | .extra.severity' semgrep-results.json | sort | uniq -c
 ```
-Run the following command on semgrep.json file to print the 15 findings from Semgrep.
-grep -o '"severity": *"[A-Z]*"' semgrep-results.json | sort | uniq -c
