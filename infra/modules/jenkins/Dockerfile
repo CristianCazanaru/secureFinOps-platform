@@ -5,4 +5,8 @@ RUN apt-get update && \
     rm -rf /var/lib/apt/lists/*
 COPY scripts/entrypoint.sh /entrypoint.sh
 RUN chmod +x /entrypoint.sh
+RUN usermod -aG docker jenkins
+HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
+  CMD curl -f http://localhost:8080/login || exit 1
+USER jenkins
 ENTRYPOINT ["/entrypoint.sh"]

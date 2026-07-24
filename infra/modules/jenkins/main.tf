@@ -13,6 +13,11 @@ resource "docker_image" "jenkins" {
     context    = path.module
     dockerfile = "Dockerfile"
   }
+
+  triggers = {
+    dockerfile_sha1 = filesha1("${path.module}/Dockerfile")
+    entrypoint_sha1 = filesha1("${path.module}/scripts/entrypoint.sh")
+  }
   keep_locally = true
 }
 
