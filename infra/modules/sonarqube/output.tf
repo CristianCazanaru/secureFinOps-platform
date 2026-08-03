@@ -1,5 +1,5 @@
 output "sonarqube_url" {
-  value = "http://securefinops-sonarqube-${var.environment}:9000"
+  value = "http://localhost:${var.sonarqube_port}"
 }
 
 output "container_name" {

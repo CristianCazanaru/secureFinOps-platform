@@ -178,16 +178,10 @@ pipeline {
                                 ${WORKSPACE}
                     """
                     def findings = sh(
-                        script: "grep -o '\"check_id\"' ${WORKSPACE}/semgrep-results.json | wc -l",
+                        script: "jq '[.results[] | select(.extra.severity==\"ERROR\")] | length' ${WORKSPACE}/semgrep-results.json",
                         returnStdout: true
                     ).trim().toInteger()
-                    echo "Semgrep findings: ${findings}"
-                    sh """
-                        echo "--- SEMGREP SEVERITY report ---"
-                        jq -r '.results[] | .extra.severity' ${WORKSPACE}/semgrep-results.json | sort | uniq -c
-                        echo "--- Total findings: ---"
-                        jq '.results | length' ${WORKSPACE}/semgrep-results.json
-                    """
+                    echo "Semgrep ERROR findings: ${findings}"
                     if (findings > 0) {
                         env.SEMGREP_STATUS = '<span style="color:red;font-weight:bold;">FAILED</span>'
                         env.SECURITY_FAILED = 'true'

@@ -31,6 +31,6 @@ module "jenkins" {
 module "sonarqube" {
   source         = "../../modules/sonarqube"
   environment    = "local"
-  sonarqube_port = 9000
+  sonarqube_port = 9090
   network_name   = module.postgres.network_name
 }
