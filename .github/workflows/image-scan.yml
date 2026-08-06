@@ -13,6 +13,8 @@ jobs:
   build-and-scan:
     name: Build and Trivy Image Scan
     runs-on: ubuntu-latest
+    env:
+      TRIVY_SKIP_VERSION_CHECK: 'true'
 
     steps:
       - name: Checkout code
